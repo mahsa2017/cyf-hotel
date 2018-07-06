@@ -42,6 +42,9 @@ app.get("/customers", function (req, res) {
     /* rows.forEach(function (row) {
       console.log(row.title, row.firstname,row.surname);
     }); */
+    if (err) {
+      return console.error(err.message);
+    }
     res.status(200).json({
       customers: rows
     });
@@ -62,13 +65,13 @@ app.get("/customers/:id", function (req, res) {
 app.get("/customers/name/:firstname", function (req, res) {
   var firstname = req.params.firstname;
   console.log(firstname);
-  db.get("SELECT * FROM customers WHERE firstname = ?", [firstname],
-    function (err, row) {
+  db.all("SELECT * FROM customers WHERE firstname ||' '|| surname like '%'||?||'%'", [firstname],
+    function (err, rows) {
       if (err) {
         return console.error(err.message);
       }
       res.status(200).json({
-        customer: row
+        customers: rows
       });
     });
 });
@@ -163,6 +166,93 @@ app.post("/reservations/", function (req, res) {
     };
   });
 });
+// Allow users to delete a paid invoice from the database
+app.post('/delete/', function (req, res) {
+  var paid = 1
+  db.run(`delete from invoices where paid = ?`, paid, function (err) {
+    if (err == null) {
+      res.status(200).send('paid invoices are deleted');  // return response
+    } else {
+      res.status(500).json({ error: err });
+    }
+  })
+})
+
+// Make it possible for a customer’s room to be changed if necessary
+app.get("/reservations/:customer_id/:room_id", function (req, res) {
+  var custid = req.params.customer_id;
+  var roomid = req.params.room_id;
+  if (custid == parseInt(custid) && roomid == parseInt(roomid)) {
+    db.run("update reservations set room_id = ? WHERE customer_id = ?", [roomid, custid],
+      function (err, row) {
+        if (err == null) {
+          res.status(200).send(
+            `Room_number = ${roomid} changed for customer_id = ${custid}`
+          );
+        } else {
+          res.status(500).json({ error: err });
+        }
+      });
+  } else {
+    res.status(400).send(`You should type integer number to change room number`);
+  };
+});
+
+// Provide the means to mark an invoice as paid
+app.post("/invoices/:id", function (req, res) {
+  var inv_id = req.params.id;
+  if (inv_id == parseInt(inv_id)) {
+    db.run("update invoices set paid = 1 WHERE id = ?", [inv_id],
+      function (err, row) {
+        if (err == null) {
+          res.status(200).send(
+            `Invoice_id = ${inv_id} set as paid`
+          );
+        } else {
+          res.status(500).json({ error: err });
+        }
+      });
+  } else {
+    res.status(400).send(`You should type integer number to change type of invoices`);
+  };
+});
+
+// Provide an endpoint for making changes to a customer’s data - provide all the column values, even if unchanged
+app.put('/customers/:id', function (req, res) {
+    var id = req.params.id;
+    var ttl = req.body.title;
+    var fnm = req.body.firstname;
+    var snm = req.body.surname;
+    var eml = req.body.email;
+    var cit = req.body.city;
+    var pos = req.body.postcode;
+    var count = req.body.country;
+    var tel = req.body.phone;
+    if (id == parseInt(id)) {
+      db.get("SELECT * FROM customers WHERE id = ?", [id],
+        function (err, row) {
+          if (err == null) {
+            if (row === undefined) {
+              res.status(400).send(`A customer with an ID '${req.params.id}' hasn't been created yet`);
+            } else {
+              if (ttl && fnm && snm && eml && cit && pos && count && tel) {
+                db.run("update customers set title = ?, firstname = ?, surname = ?, email = ?, city = ?, postcode = ?, country = ?, phone = ? WHERE id = ?", [ttl, fnm, snm, eml, cit, pos, count, tel, id], function (err, row) {
+                  if (err == null) {
+                    console.log(`DATA USER ID = ${req.params.id} was changed`);
+                    res.status(200).send(`Total data changes = ${this.changes}`);
+                  } else {
+                    res.status(500).json({ error: err });
+                  };
+                });
+              } else {
+                res.status(400).send(`You should provide all data for customer`)
+              };
+            };
+          };
+        });
+    };
+  });
+
 app.listen(SERVER_PORT, () => {
   console.info(`Server started at http://localhost:${SERVER_PORT}`);
 });
